@@ -17,12 +17,35 @@ load_dotenv()
 # Base directory of the backend project
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Detect serverless runtime (Vercel / AWS Lambda)
+IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+
+if IS_SERVERLESS:
+    tmp_path = Path("/tmp")
+    tmp_db_file = tmp_path / "pragyan.db"
+    if not tmp_db_file.exists():
+        for candidate in [BASE_DIR / "pragyan.db", BASE_DIR.parent / "pragyan.db", BASE_DIR / "scrappy.db", BASE_DIR.parent / "scrappy.db"]:
+            if candidate.exists():
+                import shutil
+                try:
+                    shutil.copy(str(candidate), str(tmp_db_file))
+                except Exception:
+                    pass
+                break
+    DEFAULT_DB_URL = f"sqlite:///{tmp_db_file}"
+    DEFAULT_UPLOAD_DIR = tmp_path / "uploads"
+    DEFAULT_CERTS_DIR = tmp_path / "uploads" / "certificates"
+else:
+    DEFAULT_DB_URL = "sqlite:///./pragyan.db"
+    DEFAULT_UPLOAD_DIR = BASE_DIR / "uploads"
+    DEFAULT_CERTS_DIR = BASE_DIR / "uploads" / "certificates"
+
 
 class Settings:
     """Central configuration for the Scrappy backend."""
 
     # ── Database ────────────────────────────────────────────────────────
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./pragyan.db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", DEFAULT_DB_URL)
 
     # ── JWT ─────────────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = os.getenv(
@@ -34,8 +57,8 @@ class Settings:
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
     # ── File uploads ────────────────────────────────────────────────────
-    UPLOAD_DIR: Path = BASE_DIR / "uploads"
-    CERTIFICATES_DIR: Path = BASE_DIR / "uploads" / "certificates"
+    UPLOAD_DIR: Path = DEFAULT_UPLOAD_DIR
+    CERTIFICATES_DIR: Path = DEFAULT_CERTS_DIR
     MAX_UPLOAD_SIZE_BYTES: int = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(10 * 1024 * 1024)))  # 10 MB
 
     # ── Encryption (Fernet) for license & test certificate files ─────────

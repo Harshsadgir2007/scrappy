@@ -35,6 +35,8 @@ backend/uploads/*
 *.db
 *.sqlite3
 *.db-journal
+!backend/pragyan.db
+!pragyan.db
 
 # OS & Editor files
 .DS_Store

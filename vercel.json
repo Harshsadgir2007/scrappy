@@ -1,8 +1,12 @@
 {
+  "version": 2,
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
-  "framework": "vite",
   "rewrites": [
+    {
+      "source": "/(auth|companies|materials|listings|bill|orders|inventory|trades|notifications|subscriptions|quality|admin|api|docs|openapi.json)(.*)",
+      "destination": "/api/index.py"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
