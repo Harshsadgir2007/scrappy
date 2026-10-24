@@ -1,72 +1,53 @@
-import os
 import sys
-import shutil
+import os
+import json
 import traceback
-from pathlib import Path
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, PlainTextResponse
+from http.server import BaseHTTPRequestHandler
 
-initialization_error = None
-db_status = {}
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        diag = {
+            "python": sys.version,
+            "cwd": os.getcwd(),
+            "path": self.path,
+            "files_here": os.listdir("."),
+        }
+        
+        # Test imports step by step
+        try:
+            import fastapi
+            diag["fastapi"] = fastapi.__version__
+        except Exception:
+            diag["fastapi_error"] = traceback.format_exc()
+            
+        try:
+            import pydantic
+            diag["pydantic"] = pydantic.__version__
+        except Exception:
+            diag["pydantic_error"] = traceback.format_exc()
 
-try:
-    API_DIR = Path(__file__).resolve().parent
-    if str(API_DIR) not in sys.path:
-        sys.path.insert(0, str(API_DIR))
+        try:
+            import email_validator
+            diag["email_validator"] = "ok"
+        except Exception:
+            diag["email_validator_error"] = traceback.format_exc()
 
-    # Safe /tmp SQLite initialization
-    tmp_dir = Path("/tmp")
-    tmp_db = tmp_dir / "pragyan.db"
-    tmp_uploads = tmp_dir / "uploads" / "certificates"
-    try:
-        tmp_uploads.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
+        try:
+            # Add current dir to path and test app import
+            if os.getcwd() not in sys.path:
+                sys.path.insert(0, os.getcwd())
+            api_dir = os.path.dirname(os.path.abspath(__file__))
+            if api_dir not in sys.path:
+                sys.path.insert(0, api_dir)
+            import app.main
+            diag["app_main"] = "ok"
+        except Exception:
+            diag["app_main_error"] = traceback.format_exc()
 
-    if not tmp_db.exists():
-        for candidate in [
-            API_DIR / "pragyan.db",
-            API_DIR.parent / "backend" / "pragyan.db",
-            API_DIR.parent / "pragyan.db",
-        ]:
-            if candidate.exists():
-                try:
-                    shutil.copy2(str(candidate), str(tmp_db))
-                    db_status["copied_from"] = str(candidate)
-                    break
-                except Exception as e:
-                    db_status["copy_error"] = str(e)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(diag, indent=2).encode('utf-8'))
 
-    db_status["tmp_db_exists"] = tmp_db.exists()
-    db_status["tmp_db_size"] = tmp_db.stat().st_size if tmp_db.exists() else 0
-
-    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_db}"
-    os.environ["UPLOAD_DIR"] = str(tmp_dir / "uploads")
-    os.environ["CERTIFICATES_DIR"] = str(tmp_uploads)
-
-    # Import the main backend app
-    from app.main import app as backend_app
-    app = backend_app
-
-except Exception as e:
-    initialization_error = traceback.format_exc()
-    app = FastAPI(title="Scrappy Diagnostic Fallback")
-
-
-@app.get("/api/test")
-@app.get("/test")
-def test_endpoint():
-    return {
-        "status": "online",
-        "message": "Scrappy Python Serverless Engine on Vercel is active",
-        "initialization_error": bool(initialization_error),
-        "db": db_status
-    }
-
-
-@app.get("/api/error")
-@app.get("/error")
-def error_endpoint():
-    if initialization_error:
-        return PlainTextResponse(initialization_error, status_code=500)
-    return PlainTextResponse("No initialization error recorded! Backend imported cleanly.", status_code=200)
+    def do_POST(self):
+        return self.do_GET()
