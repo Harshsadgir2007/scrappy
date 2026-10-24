@@ -2,67 +2,7 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/auth/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/companies/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/materials/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/listings/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/bill/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/orders/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/inventory/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/trades/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/notifications/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/subscriptions/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/quality/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/admin/:path*",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/docs",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/openapi.json",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
