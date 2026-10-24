@@ -1,7 +1,6 @@
 import sys
 import os
-import json
-import traceback
+import inspect
 from http.server import BaseHTTPRequestHandler
 
 class handler(BaseHTTPRequestHandler):
@@ -11,15 +10,11 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         
         try:
-            vc_file = "vc__handler__python.py"
-            if os.path.exists(vc_file):
-                with open(vc_file, "r", encoding="utf-8", errors="ignore") as f:
-                    self.wfile.write(f"=== {vc_file} ===\n".encode())
-                    self.wfile.write(f.read().encode())
-            else:
-                self.wfile.write(b"vc__handler__python.py NOT FOUND\n")
+            import vercel_runtime.vc_init as vc_init
+            src = inspect.getsource(vc_init)
+            self.wfile.write(f"=== vercel_runtime.vc_init ===\n{src}".encode())
         except Exception as e:
-            self.wfile.write(f"Error reading vc handler: {e}\n".encode())
+            self.wfile.write(f"Error inspecting vc_init: {e}\n".encode())
 
     def do_POST(self):
         return self.do_GET()
