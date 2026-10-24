@@ -3,6 +3,7 @@ Trade History Service.
 
 Maintains an immutable ledger of finalized circular economy transactions
 recorded at both the Buyer's end and the Seller's end.
+Includes transaction commission records for accounting and audit.
 """
 
 import uuid
@@ -18,11 +19,10 @@ from app.schemas.trade import TradeHistoryResponse, TradeStatsResponse
 
 def calculate_co2_offset(material_name: str, tons: float) -> float:
     """Estimated CO2 emissions saved in kg by using recycled/by-product material
-
     instead of virgin raw material.
     Steel: ~1,500 kg CO2 / ton
     Fly Ash in Cement: ~800 kg CO2 / ton
-    Recycled Textile: ~2,000 kg CO2 / ton
+    Recycled Textile: ~2,00,0 kg CO2 / ton
     Default: ~1,000 kg CO2 / ton
     """
     mat_lower = material_name.lower()
@@ -43,6 +43,9 @@ def record_trade_from_order(order: Order, db: Session) -> TradeHistory:
     # Check if trade record already exists for this order
     existing = db.query(TradeHistory).filter(TradeHistory.order_id == order.id).first()
     if existing:
+        if order.commission and not order.commission.trade_id:
+            order.commission.trade_id = existing.id
+            db.commit()
         return existing
 
     trade_num = f"TRD-{datetime.now(timezone.utc).strftime('%y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
@@ -81,6 +84,11 @@ def record_trade_from_order(order: Order, db: Session) -> TradeHistory:
     db.add(trade)
     db.commit()
     db.refresh(trade)
+
+    if order.commission:
+        order.commission.trade_id = trade.id
+        db.commit()
+
     return trade
 
 
@@ -94,6 +102,23 @@ def serialize_trade_history(trade: TradeHistory, viewing_company_id: int) -> Tra
     counterparty_name = seller_name if is_buyer else buyer_name
     counterparty = trade.seller_company if is_buyer else trade.buyer_company
     counterparty_loc = f"{counterparty.city}, {counterparty.state}" if counterparty else "India"
+
+    comm_dict = None
+    if trade.commission:
+        c = trade.commission
+        comm_dict = {
+            "is_eligible": c.total_commission > 0,
+            "material_transaction_value": c.material_transaction_value,
+            "commission_rate": c.commission_rate,
+            "total_commission": c.total_commission,
+            "buyer_rate": c.buyer_rate,
+            "buyer_contribution": c.buyer_contribution,
+            "seller_rate": c.seller_rate,
+            "seller_contribution": c.seller_contribution,
+            "status": c.status,
+            "buyer_collection_status": c.buyer_collection_status,
+            "seller_collection_status": c.seller_collection_status,
+        }
 
     return TradeHistoryResponse(
         id=trade.id,
@@ -113,6 +138,7 @@ def serialize_trade_history(trade: TradeHistory, viewing_company_id: int) -> Tra
         freight_cost=trade.freight_cost,
         toll_cost=trade.toll_cost,
         total_landed_cost=trade.total_landed_cost,
+        commission=comm_dict,
         my_role=my_role,
         counterparty_name=counterparty_name,
         counterparty_location=counterparty_loc,
@@ -132,11 +158,10 @@ def serialize_trade_history(trade: TradeHistory, viewing_company_id: int) -> Tra
 
 def list_trade_history(
     company_id: int,
-    role: str | None = None,  # "all", "buyer", "seller"
+    role: str | None = None,
     db: Session = None,
 ) -> list[TradeHistoryResponse]:
     query = db.query(TradeHistory)
-
     if role == "buyer":
         query = query.filter(TradeHistory.buyer_company_id == company_id)
     elif role == "seller":
@@ -148,13 +173,15 @@ def list_trade_history(
                 TradeHistory.seller_company_id == company_id,
             )
         )
-
     trades = query.order_by(TradeHistory.created_at.desc()).all()
     return [serialize_trade_history(t, company_id) for t in trades]
 
 
+list_company_trades = list_trade_history
+
+
 def get_trade_stats(company_id: int, db: Session) -> TradeStatsResponse:
-    all_trades = (
+    trades = (
         db.query(TradeHistory)
         .filter(
             or_(
@@ -165,17 +192,18 @@ def get_trade_stats(company_id: int, db: Session) -> TradeStatsResponse:
         .all()
     )
 
-    total_tons = sum(t.traded_tons for t in all_trades)
-    total_val = sum(t.total_landed_cost for t in all_trades)
-    total_co2 = sum(t.carbon_offset_kg for t in all_trades)
-    as_buyer = sum(1 for t in all_trades if t.buyer_company_id == company_id)
-    as_seller = sum(1 for t in all_trades if t.seller_company_id == company_id)
+    buyer_trades = [t for t in trades if t.buyer_company_id == company_id]
+    seller_trades = [t for t in trades if t.seller_company_id == company_id]
+
+    total_tons = sum(t.traded_tons for t in trades)
+    total_val = sum(t.total_landed_cost for t in trades)
+    total_co2 = sum(t.carbon_offset_kg for t in trades)
 
     return TradeStatsResponse(
-        total_trades_count=len(all_trades),
+        total_trades_count=len(trades),
         total_traded_tons=round(total_tons, 2),
         total_traded_value_inr=round(total_val, 2),
         total_co2_offset_kg=round(total_co2, 2),
-        as_buyer_trades=as_buyer,
-        as_seller_trades=as_seller,
+        as_buyer_trades=len(buyer_trades),
+        as_seller_trades=len(seller_trades),
     )

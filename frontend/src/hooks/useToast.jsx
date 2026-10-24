@@ -6,8 +6,19 @@ export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
 
   const addToast = useCallback((message, type = 'info', duration = 3500) => {
+    let safeMessage = '';
+    if (Array.isArray(message)) {
+      safeMessage = message
+        .map((m) => (typeof m === 'object' && m ? m.msg || m.detail || JSON.stringify(m) : String(m)))
+        .join(', ');
+    } else if (typeof message === 'object' && message !== null) {
+      safeMessage = message.msg || message.detail || message.message || JSON.stringify(message);
+    } else {
+      safeMessage = String(message || 'An unexpected error occurred');
+    }
+
     const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message: safeMessage, type }]);
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -21,15 +32,18 @@ export const ToastProvider = ({ children }) => {
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="toast-container" style={{
-        position: 'fixed',
-        bottom: '24px',
-        right: '24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        zIndex: 9999,
-      }}>
+      <div
+        className="toast-container"
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          zIndex: 9999,
+        }}
+      >
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -64,7 +78,7 @@ export const ToastProvider = ({ children }) => {
 export const useToast = () => {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error('useToast must be used within ToastProvider');
+    throw new Error('useToast must be used within a ToastProvider');
   }
   return context;
 };

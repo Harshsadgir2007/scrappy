@@ -1,8 +1,8 @@
 """
 File storage utilities with Fernet encryption.
 
-License files uploaded by companies are encrypted at rest using Fernet
-symmetric encryption and stored in the uploads/ directory.
+License and material quality certificate files uploaded by companies are encrypted
+at rest using Fernet symmetric encryption and stored in the uploads/ directory.
 """
 
 import os
@@ -20,11 +20,12 @@ def _get_fernet() -> Fernet:
 
 
 def ensure_upload_dir() -> None:
-    """Create the uploads directory if it doesn't exist."""
+    """Create the uploads and certificates directory if it doesn't exist."""
     settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    settings.CERTIFICATES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def encrypt_and_save(file_bytes: bytes, filename: str) -> str:
+def encrypt_and_save(file_bytes: bytes, filename: str, subfolder: str | None = None) -> str:
     """Encrypt file content and persist it to the uploads directory.
 
     A UUID prefix is added to the filename to avoid collisions.
@@ -32,6 +33,7 @@ def encrypt_and_save(file_bytes: bytes, filename: str) -> str:
     Args:
         file_bytes: Raw bytes of the file to store.
         filename: Original filename (used for extension detection).
+        subfolder: Optional subfolder within uploads (e.g. 'certificates').
 
     Returns:
         The relative path (from the backend root) to the stored file.
@@ -43,7 +45,9 @@ def encrypt_and_save(file_bytes: bytes, filename: str) -> str:
 
     # Unique storage name: <uuid>_<original_filename>
     safe_name = f"{uuid.uuid4().hex}_{filename}"
-    dest = settings.UPLOAD_DIR / safe_name
+    target_dir = settings.CERTIFICATES_DIR if subfolder == "certificates" else settings.UPLOAD_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dest = target_dir / safe_name
 
     dest.write_bytes(encrypted)
     return str(dest)

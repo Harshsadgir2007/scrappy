@@ -22,8 +22,17 @@ const Navbar = () => {
     { name: 'Orders & Tracking', path: '/orders', icon: 'local_shipping' },
     { name: 'Trade History', path: '/trades', icon: 'history_edu' },
     { name: 'Material Catalog', path: '/materials', icon: 'inventory_2' },
+    { name: 'Subscription', path: '/subscription', icon: 'card_membership' },
     { name: 'Company Profile', path: '/profile', icon: 'domain' },
   ];
+
+  if (user?.role === 'admin') {
+    navItems.push({
+      name: 'Admin Verification & Quality',
+      path: '/admin/verifications',
+      icon: 'verified_user',
+    });
+  }
 
   // Helper for user initials
   const getInitials = (name) => {

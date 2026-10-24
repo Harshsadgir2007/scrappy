@@ -80,6 +80,7 @@ class Company(Base):
 
     # ── Relationships ───────────────────────────────────────────────────
     users = relationship("User", back_populates="company", lazy="selectin")
+    subscription = relationship("CompanySubscription", back_populates="company", uselist=False, lazy="joined")
 
     def __repr__(self) -> str:
         return f"<Company id={self.id} name={self.name!r} status={self.verification_status}>"

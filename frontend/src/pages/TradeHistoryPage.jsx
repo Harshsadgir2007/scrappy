@@ -319,6 +319,62 @@ const TradeHistoryPage = () => {
                 </tbody>
               </table>
 
+              {/* Bilateral Platform Commission Audit (> ₹5,00,000) */}
+              <div
+                style={{
+                  backgroundColor: '#F8F9FA',
+                  border: '1px solid #DEE2E6',
+                  borderRadius: '6px',
+                  padding: '12px 16px',
+                  fontSize: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <strong style={{ color: '#1B4332' }}>
+                    Circular Platform Transaction Commission
+                  </strong>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: selectedTrade.material_cost > 500000 ? '#E8F5E9' : '#E9ECEF',
+                      color: selectedTrade.material_cost > 500000 ? '#1B4332' : '#6C757D',
+                    }}
+                  >
+                    {selectedTrade.material_cost > 500000 ? '0.5% Applied (> ₹5L)' : 'Exempt (≤ ₹5L)'}
+                  </span>
+                </div>
+
+                {selectedTrade.material_cost > 500000 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', borderTop: '1px solid #E9ECEF', paddingTop: '8px' }}>
+                    <div>
+                      <div style={{ color: '#6C757D', fontSize: '11px' }}>Total Platform Fee (0.5%):</div>
+                      <strong style={{ color: '#1B4332', fontSize: '13px' }}>
+                        ₹{(selectedTrade.material_cost * 0.005).toLocaleString()}
+                      </strong>
+                    </div>
+                    <div>
+                      <div style={{ color: '#6C757D', fontSize: '11px' }}>Buyer Share (0.25%):</div>
+                      <strong style={{ color: '#2D6A4F', fontSize: '13px' }}>
+                        ₹{(selectedTrade.material_cost * 0.0025).toLocaleString()}
+                      </strong>
+                    </div>
+                    <div>
+                      <div style={{ color: '#6C757D', fontSize: '11px' }}>Seller Share (0.25%):</div>
+                      <strong style={{ color: '#2D6A4F', fontSize: '13px' }}>
+                        ₹{(selectedTrade.material_cost * 0.0025).toLocaleString()}
+                      </strong>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: '#6C757D', fontSize: '11px' }}>
+                    Material value of ₹{selectedTrade.material_cost.toLocaleString()} is ≤ ₹5,00,000 threshold. Zero platform commission charged.
+                  </div>
+                )}
+              </div>
+
               {/* Environmental Carbon Stamp */}
               <div style={{
                 display: 'flex',

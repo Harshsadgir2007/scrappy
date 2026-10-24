@@ -3,6 +3,7 @@ Listing ORM model.
 
 Represents an offer by a verified company of recyclable waste, scrap,
 or by-product. Identities remain anonymous to other companies.
+Requires mandatory quality test certification before live marketplace publishing.
 """
 
 from datetime import datetime, timezone
@@ -60,9 +61,12 @@ class Listing(Base):
     freight_rate_per_ton_km = Column(Float, nullable=False, default=3.5)
     toll_estimate = Column(Float, nullable=False, default=0.0)
 
-    # Status: "live", "paused", "closed", "coming_soon"
+    # Status: "live", "paused", "closed", "coming_soon", "draft"
     status = Column(String(20), nullable=False, default="live")
     available_from = Column(DateTime, nullable=True)
+
+    # Quality Certification Status: "approved", "pending_review", "rejected", "info_required", "draft"
+    quality_status = Column(String(32), nullable=False, default="approved")
 
     # Phase 4 Coming Soon / Pre-Book extensions (PRD F7)
     is_coming_soon = Column(Boolean, nullable=False, default=False)
@@ -86,3 +90,4 @@ class Listing(Base):
     company = relationship("Company", lazy="joined")
     material = relationship("Material", lazy="joined")
     orders = relationship("Order", back_populates="listing", lazy="selectin")
+    quality_certificate = relationship("QualityTestCertificate", back_populates="listing", uselist=False, lazy="joined", cascade="all, delete-orphan")

@@ -68,6 +68,10 @@ class ListingResponse(BaseModel):
     pickup_city: str
     pickup_state: str
 
+    # Quality Certification
+    quality_status: str = "approved"
+    quality_certificate: dict | None = None
+
     # Intelligence Suite (PRD F2)
     compatibility: dict | None = None
 
@@ -104,6 +108,9 @@ class BillEstimateResponse(BaseModel):
     toll_estimate: float
     total_landed_cost: float
     effective_landed_price_per_ton: float
+
+    # Platform Commission Breakdown (for material values > INR 5,00,000)
+    commission: dict | None = None
 
 
 # ── Order Schemas ───────────────────────────────────────────────────────
@@ -165,6 +172,9 @@ class OrderResponse(BaseModel):
     freight_cost: float
     toll_estimate: float
     total_landed_cost: float
+
+    # Transaction Commission
+    commission: dict | None = None
 
     # Status & Tracking
     status: str

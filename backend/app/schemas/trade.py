@@ -28,6 +28,9 @@ class TradeHistoryResponse(BaseModel):
     toll_cost: float
     total_landed_cost: float
 
+    # Transaction Commission
+    commission: dict | None = None
+
     # Parties info
     my_role: str  # "BUYER" or "SELLER"
     counterparty_name: str

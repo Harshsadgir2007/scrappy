@@ -2,7 +2,7 @@
 Scrappy — Industrial Waste & Scrap Exchange Platform.
 
 FastAPI application entry point. Configures CORS, registers routers,
-and creates database tables on startup (dev convenience).
+and initializes database tables and quality requirements on startup.
 """
 
 from contextlib import asynccontextmanager
@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.utils.file_storage import ensure_upload_dir
 
 # Import routers
@@ -23,22 +23,29 @@ from app.routers import (
     marketplace,
     materials,
     notifications,
+    quality,
+    subscriptions,
     trades,
 )
 
 # Import models so Base.metadata knows about all tables
 import app.models  # noqa: F401
+from app.services.quality_service import seed_default_quality_requirements
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle for the FastAPI application."""
     # ── Startup ─────────────────────────────────────────────────────
-    # Create all tables (dev convenience — Alembic handles migrations in production).
     Base.metadata.create_all(bind=engine)
-
-    # Ensure the uploads directory exists
     ensure_upload_dir()
+
+    # Seed default material testing requirements
+    db = SessionLocal()
+    try:
+        seed_default_quality_requirements(db)
+    finally:
+        db.close()
 
     yield
     # ── Shutdown ────────────────────────────────────────────────────
@@ -55,10 +62,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS middleware (allow all for development) ─────────────────────────
+# ── CORS middleware ────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,6 +85,8 @@ app.include_router(marketplace.router)
 app.include_router(inventory.router)
 app.include_router(trades.router)
 app.include_router(notifications.router)
+app.include_router(subscriptions.router)
+app.include_router(quality.router)
 app.include_router(admin.router)
 
 

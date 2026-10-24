@@ -14,6 +14,8 @@ import MarketplacePage from './pages/MarketplacePage';
 import OrdersPage from './pages/OrdersPage';
 import InventoryPage from './pages/InventoryPage';
 import TradeHistoryPage from './pages/TradeHistoryPage';
+import SubscriptionPage from './pages/SubscriptionPage';
+import AdminVerificationPage from './pages/AdminVerificationPage';
 import ErrorPage from './pages/ErrorPage';
 
 function App() {
@@ -41,7 +43,9 @@ function App() {
                 <Route path="/orders" element={<OrdersPage />} />
                 <Route path="/trades" element={<TradeHistoryPage />} />
                 <Route path="/materials" element={<MaterialCatalogPage />} />
+                <Route path="/subscription" element={<SubscriptionPage />} />
                 <Route path="/profile" element={<CompanyProfilePage />} />
+                <Route path="/admin/verifications" element={<AdminVerificationPage />} />
               </Route>
 
               {/* Catch-all: redirect to dashboard if authenticated, or show ErrorPage */}

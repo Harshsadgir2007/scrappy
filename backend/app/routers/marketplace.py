@@ -1,12 +1,13 @@
 """
 Marketplace router — listings, landed cost estimates, variable quantity orders, and order tracking.
+Enforces verified enterprise status and active company subscriptions (INR 2,500/yr) on protected operations.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_verified_company
+from app.dependencies import get_current_user, require_active_subscription, require_verified_company
 from app.models.listing import Listing
 from app.models.order import Order
 from app.models.user import User
@@ -41,7 +42,9 @@ def get_listings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Browse live marketplace listings with anonymized seller info & compatibility badges."""
+    """Browse live marketplace listings with anonymized seller info & compatibility badges.
+    Only listings with approved quality certificates are displayed.
+    """
     return marketplace_service.list_marketplace_listings(
         db=db,
         viewing_company=current_user.company,
@@ -58,10 +61,10 @@ def get_listings(
 @router.post("/listings", response_model=ListingResponse, status_code=status.HTTP_201_CREATED)
 def create_new_listing(
     payload: ListingCreate,
-    current_user: User = Depends(require_verified_company()),
+    current_user: User = Depends(require_active_subscription()),
     db: Session = Depends(get_db),
 ):
-    """Post scrap, leftover or by-product listing (Verified companies only)."""
+    """Post scrap, leftover or by-product listing (Requires active company subscription)."""
     try:
         listing = marketplace_service.create_listing(current_user.company, payload, db)
         return ListingResponse(
@@ -86,6 +89,7 @@ def create_new_listing(
             seller_label=f"Verified Producer #{1000 + listing.company_id}",
             pickup_city=listing.pickup_city,
             pickup_state=listing.pickup_state,
+            quality_status=listing.quality_status,
             status=listing.status,
             created_at=listing.created_at,
         )
@@ -98,7 +102,7 @@ def get_my_company_listings(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return all listings published by the caller's company."""
+    """Return all listings published by the caller's company (including drafts and pending review)."""
     if not current_user.company_id:
         return []
     listings = (
@@ -107,34 +111,49 @@ def get_my_company_listings(
         .order_by(Listing.created_at.desc())
         .all()
     )
-    return [
-        ListingResponse(
-            id=l.id,
-            company_id=l.company_id,
-            material_id=l.material_id,
-            material_name=l.material.name if l.material else "Scrap",
-            material_category=l.material.category if l.material else "general",
-            category=l.category,
-            title=l.title,
-            description=l.description,
-            total_tons=l.total_tons,
-            remaining_tons=l.remaining_tons,
-            reserved_tons=l.reserved_tons,
-            price_per_ton=l.price_per_ton,
-            min_order_tons=l.min_order_tons,
-            is_processed=l.is_processed,
-            processing_details=l.processing_details,
-            processing_cost_per_ton=l.processing_cost_per_ton,
-            freight_rate_per_ton_km=l.freight_rate_per_ton_km,
-            toll_estimate=l.toll_estimate,
-            seller_label="Your Company",
-            pickup_city=l.pickup_city,
-            pickup_state=l.pickup_state,
-            status=l.status,
-            created_at=l.created_at,
+    results = []
+    for l in listings:
+        cert_preview = None
+        if l.quality_certificate:
+            cert_preview = {
+                "id": l.quality_certificate.id,
+                "certificate_number": l.quality_certificate.certificate_number,
+                "testing_lab_name": l.quality_certificate.testing_lab_name,
+                "lab_accreditation": l.quality_certificate.lab_accreditation,
+                "review_status": l.quality_certificate.review_status,
+                "original_filename": l.quality_certificate.original_filename,
+                "reviewer_comments": l.quality_certificate.reviewer_comments,
+            }
+        results.append(
+            ListingResponse(
+                id=l.id,
+                company_id=l.company_id,
+                material_id=l.material_id,
+                material_name=l.material.name if l.material else "Scrap",
+                material_category=l.material.category if l.material else "general",
+                category=l.category,
+                title=l.title,
+                description=l.description,
+                total_tons=l.total_tons,
+                remaining_tons=l.remaining_tons,
+                reserved_tons=l.reserved_tons,
+                price_per_ton=l.price_per_ton,
+                min_order_tons=l.min_order_tons,
+                is_processed=l.is_processed,
+                processing_details=l.processing_details,
+                processing_cost_per_ton=l.processing_cost_per_ton,
+                freight_rate_per_ton_km=l.freight_rate_per_ton_km,
+                toll_estimate=l.toll_estimate,
+                seller_label="Your Company",
+                pickup_city=l.pickup_city,
+                pickup_state=l.pickup_state,
+                quality_status=l.quality_status,
+                quality_certificate=cert_preview,
+                status=l.status,
+                created_at=l.created_at,
+            )
         )
-        for l in listings
-    ]
+    return results
 
 
 # ── Landed Cost Bill Endpoint ───────────────────────────────────────────
@@ -145,7 +164,7 @@ def estimate_cost_bill(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Calculate the 3-part itemized landed cost bill for any listing and requested tonnage."""
+    """Calculate 3-part itemized landed cost bill + transaction commission estimate."""
     listing = db.query(Listing).filter(Listing.id == payload.listing_id).first()
     if not listing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
@@ -162,10 +181,10 @@ def estimate_cost_bill(
 @router.post("/orders", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 def submit_purchase_order(
     payload: OrderCreate,
-    current_user: User = Depends(require_verified_company()),
+    current_user: User = Depends(require_active_subscription()),
     db: Session = Depends(get_db),
 ):
-    """Place purchase request for variable partial quantity. Places a 48h reservation hold."""
+    """Place purchase request (Requires active company subscription)."""
     try:
         order = marketplace_service.place_order(current_user.company, payload, db)
         return marketplace_service.serialize_order(order, current_user.company_id)
@@ -213,22 +232,22 @@ def get_order_details(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Fetch order details and full tracking history."""
+    """Fetch order details, commission breakdown, and full tracking history."""
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
-    if current_user.company_id not in (order.buyer_company_id, order.seller_company_id):
+    if current_user.role != "admin" and current_user.company_id not in (order.buyer_company_id, order.seller_company_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    return marketplace_service.serialize_order(order, current_user.company_id)
+    return marketplace_service.serialize_order(order, current_user.company_id or 0)
 
 
 @router.put("/orders/{order_id}/action", response_model=OrderResponse)
 def act_on_order(
     order_id: int,
     payload: OrderActionRequest,
-    current_user: User = Depends(require_verified_company()),
+    current_user: User = Depends(require_active_subscription()),
     db: Session = Depends(get_db),
 ):
     """Seller approves, rejects, or counters an incoming order request."""
@@ -250,10 +269,10 @@ def act_on_order(
 def dispatch_order(
     order_id: int,
     payload: OrderDispatchPayload,
-    current_user: User = Depends(require_verified_company()),
+    current_user: User = Depends(require_active_subscription()),
     db: Session = Depends(get_db),
 ):
-    """Seller marks order as dispatched with logistics carrier & vehicle details."""
+    """Seller dispatches consignment."""
     try:
         order = marketplace_service.dispatch_order(
             order_id=order_id,
@@ -267,13 +286,13 @@ def dispatch_order(
 
 
 @router.put("/orders/{order_id}/tracking", response_model=OrderResponse)
-def update_tracking(
+def update_tracking_checkpoint(
     order_id: int,
     payload: OrderTrackingUpdatePayload,
-    current_user: User = Depends(require_verified_company()),
+    current_user: User = Depends(require_active_subscription()),
     db: Session = Depends(get_db),
 ):
-    """Update shipment progress (e.g. mark in_transit, log highway checkpoint)."""
+    """Log transit milestone checkpoint."""
     try:
         order = marketplace_service.update_order_tracking(
             order_id=order_id,
@@ -287,16 +306,16 @@ def update_tracking(
 
 
 @router.put("/orders/{order_id}/deliver", response_model=OrderResponse)
-def confirm_delivery(
+def deliver_order(
     order_id: int,
-    current_user: User = Depends(require_verified_company()),
+    current_user: User = Depends(require_active_subscription()),
     db: Session = Depends(get_db),
 ):
-    """Confirm consignment delivery. Creates permanent Trade History & updates inventory at both ends."""
+    """Buyer verifies delivery and signs off."""
     try:
         order = marketplace_service.deliver_order(
             order_id=order_id,
-            company=current_user.company,
+            buyer_company=current_user.company,
             db=db,
         )
         return marketplace_service.serialize_order(order, current_user.company_id)

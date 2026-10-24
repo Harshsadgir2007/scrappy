@@ -4,6 +4,7 @@ Trade History ORM model.
 Records immutable finalized circular economy transactions at both ends:
 - Buyer enterprise ledger
 - Seller enterprise ledger
+Includes transaction commission tracking for permanent audit.
 """
 
 from datetime import datetime, timezone
@@ -72,3 +73,4 @@ class TradeHistory(Base):
     order = relationship("Order", lazy="joined")
     buyer_company = relationship("Company", foreign_keys=[buyer_company_id], lazy="joined")
     seller_company = relationship("Company", foreign_keys=[seller_company_id], lazy="joined")
+    commission = relationship("TransactionCommission", back_populates="trade", uselist=False, lazy="joined")

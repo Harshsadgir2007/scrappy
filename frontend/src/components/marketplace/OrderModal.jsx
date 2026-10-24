@@ -393,6 +393,39 @@ const OrderModal = ({ isOpen, onClose, listing, onOrderSuccess }) => {
                 </div>
               )}
 
+              {/* Transaction Commission Breakdown */}
+              {bill.commission && (
+                <div
+                  style={{
+                    backgroundColor: bill.commission.is_eligible ? '#F0FDF4' : '#F8FAF7',
+                    border: bill.commission.is_eligible ? '1px solid #BBF7D0' : '1px solid #E1E6DF',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    marginTop: '4px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, color: bill.commission.is_eligible ? '#166534' : '#68756D' }}>
+                      Transaction Commission {bill.commission.is_eligible ? '(0.5% on material value > ₹5 Lakh)' : '(Exempt ≤ ₹5 Lakh)'}:
+                    </span>
+                    <strong style={{ color: bill.commission.is_eligible ? '#166534' : '#68756D' }}>
+                      ₹{bill.commission.total_commission?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                  {bill.commission.is_eligible ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '11px', color: '#166534' }}>
+                      <span>Buyer contribution (0.25%): <strong>₹{bill.commission.buyer_contribution?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                      <span>Seller contribution (0.25%): <strong>₹{bill.commission.seller_contribution?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '10px', color: '#68756D', marginTop: '2px' }}>
+                      Pure material value (₹{bill.material_cost?.toLocaleString()}) is ≤ ₹5,00,000. Exempt from commission.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div
                 style={{
                   borderTop: '1px solid #E1E6DF',

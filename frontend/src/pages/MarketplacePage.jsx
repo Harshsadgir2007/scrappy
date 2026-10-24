@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import OrderModal from '../components/marketplace/OrderModal';
 import CreateListingModal from '../components/marketplace/CreateListingModal';
+import ResubmitCertificateModal from '../components/marketplace/ResubmitCertificateModal';
 
 const MarketplacePage = () => {
   const { company } = useAuth();
   const { addToast } = useToast();
+  const navigate = useNavigate();
 
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,20 +21,51 @@ const MarketplacePage = () => {
   const [selectedListing, setSelectedListing] = useState(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  const [activeStreamType, setActiveStreamType] = useState('available'); // 'available' or 'coming_soon'
+  // Resubmit Quality Certificate Modal
+  const [resubmitModalOpen, setResubmitModalOpen] = useState(false);
+  const [resubmitListing, setResubmitListing] = useState(null);
+
+  // 'available', 'coming_soon', or 'my_listings'
+  const [activeStreamType, setActiveStreamType] = useState('available');
+
+  // Company Subscription Status
+  const [subscription, setSubscription] = useState(null);
+  const [subLoading, setSubLoading] = useState(true);
 
   const isVerified = company?.verification_status === 'verified';
+
+  // Check Subscription Status
+  const fetchSubscriptionStatus = useCallback(async () => {
+    try {
+      setSubLoading(true);
+      const res = await api.get('/subscriptions/status');
+      setSubscription(res.data);
+    } catch {
+      // Admin or unauthenticated
+    } finally {
+      setSubLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSubscriptionStatus();
+  }, [fetchSubscriptionStatus]);
 
   const fetchListings = useCallback(async () => {
     try {
       setLoading(true);
-      const isComingSoon = activeStreamType === 'coming_soon';
-      let url = `/listings?is_coming_soon=${isComingSoon}`;
-      if (selectedCategory !== 'all') {
-        url += `&category=${selectedCategory}`;
+      if (activeStreamType === 'my_listings') {
+        const res = await api.get('/listings/my-listings');
+        setListings(res.data);
+      } else {
+        const isComingSoon = activeStreamType === 'coming_soon';
+        let url = `/listings?is_coming_soon=${isComingSoon}`;
+        if (selectedCategory !== 'all') {
+          url += `&category=${selectedCategory}`;
+        }
+        const res = await api.get(url);
+        setListings(res.data);
       }
-      const res = await api.get(url);
-      setListings(res.data);
     } catch (err) {
       addToast('Failed to load marketplace listings', 'error');
     } finally {
@@ -44,6 +78,14 @@ const MarketplacePage = () => {
   }, [fetchListings]);
 
   const handleOpenOrder = (listing) => {
+    if (subscription && !subscription.is_active) {
+      addToast(
+        'Annual Company Subscription is inactive. Please renew your subscription to place orders.',
+        'warning'
+      );
+      navigate('/subscription');
+      return;
+    }
     if (!isVerified) {
       addToast('Please upload your business license to verify your enterprise before ordering', 'warning');
       return;
@@ -54,6 +96,44 @@ const MarketplacePage = () => {
     }
     setSelectedListing(listing);
     setIsOrderModalOpen(true);
+  };
+
+  const handleOpenCreateListing = () => {
+    if (subscription && !subscription.is_active) {
+      addToast(
+        'Annual Company Subscription is inactive. Please renew your subscription to publish listings.',
+        'warning'
+      );
+      navigate('/subscription');
+      return;
+    }
+    if (!isVerified) {
+      addToast('Upload your company license to activate selling', 'warning');
+      return;
+    }
+    setIsCreateModalOpen(true);
+  };
+
+  const handleDownloadCertificate = async (certId, filename) => {
+    if (!certId) {
+      addToast('No certificate document found for this listing', 'info');
+      return;
+    }
+    try {
+      const res = await api.get(`/quality/certificates/${certId}/download`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename || `Quality_Certificate_${certId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      addToast('Decrypted certificate downloaded successfully', 'success');
+    } catch {
+      addToast('Failed to download decrypted quality certificate', 'error');
+    }
   };
 
   const filtered = listings.filter((l) => {
@@ -68,6 +148,50 @@ const MarketplacePage = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* ── Subscription Warning Banner if Inactive/Expired ────────────────── */}
+      {subscription && !subscription.is_active && (
+        <section
+          style={{
+            backgroundColor: '#FFF4E5',
+            border: '2px solid #FFA726',
+            borderRadius: '12px',
+            padding: '16px 22px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span className="material-symbols-outlined" style={{ color: '#E65100', fontSize: '32px' }}>
+              lock
+            </span>
+            <div>
+              <strong style={{ color: '#E65100', fontSize: '15px' }}>
+                Annual Company Subscription Inactive / Expired
+              </strong>
+              <p style={{ margin: '4px 0 0', color: '#6D4C41', fontSize: '13px' }}>
+                Your enterprise subscription status is currently <strong>{subscription.status.toUpperCase()}</strong>.
+                Marketplace trading, listing creation, and ordering are restricted until the company subscription (₹2,500/year) is active.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/subscription')}
+            className="btn-primary"
+            style={{
+              padding: '10px 20px',
+              fontSize: '13px',
+              backgroundColor: '#E65100',
+              borderColor: '#E65100',
+            }}
+          >
+            Renew Subscription (₹2,500)
+          </button>
+        </section>
+      )}
+
       {/* ── Top Operational Subheader / Cluster Status ────────────────── */}
       <section className="scrappy-card" style={{ padding: '24px 28px' }}>
         <div
@@ -120,19 +244,13 @@ const MarketplacePage = () => {
             </h1>
             <p style={{ color: '#68756D', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
               Real-time metallurgical inventory across Western Steel Belt & Hazira-Surat Industrial Corridor. All
-              lots backed by verified declarations with automated furnace-grade matching.
+              lots backed by mandatory accredited quality certificates with automated furnace-grade matching.
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <button
-              onClick={() => {
-                if (!isVerified) {
-                  addToast('Upload your company license to activate selling', 'warning');
-                  return;
-                }
-                setIsCreateModalOpen(true);
-              }}
+              onClick={handleOpenCreateListing}
               className="btn-primary"
               style={{ padding: '10px 18px' }}
             >
@@ -197,7 +315,7 @@ const MarketplacePage = () => {
               <span style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'Inter, sans-serif' }}>24</span>
               <span style={{ fontSize: '12px', color: '#FAFBF7' }}>Mills</span>
             </div>
-            <span style={{ fontSize: '10px', color: '#B8E36A' }}>100% Verified</span>
+            <span style={{ fontSize: '10px', color: '#B8E36A' }}>100% Quality Audited</span>
           </div>
 
           <div style={{ borderRight: '1px solid rgba(255, 255, 255, 0.1)', paddingRight: '12px' }}>
@@ -211,15 +329,15 @@ const MarketplacePage = () => {
                 letterSpacing: '0.06em',
               }}
             >
-              Avg Cluster Radius
+              Commission Rate
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
-              <span style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'Inter, sans-serif' }}>18.4</span>
+              <span style={{ fontSize: '22px', fontWeight: 800, fontFamily: 'Inter, sans-serif' }}>0.5%</span>
               <span style={{ fontSize: '12px', color: '#7B958B', fontFamily: 'JetBrains Mono, monospace' }}>
-                km
+                &gt; ₹5L
               </span>
             </div>
-            <span style={{ fontSize: '10px', color: '#7B958B' }}>Low dispatch transit</span>
+            <span style={{ fontSize: '10px', color: '#7B958B' }}>0.25% Buyer / 0.25% Seller</span>
           </div>
 
           <div style={{ borderRight: '1px solid rgba(255, 255, 255, 0.1)', paddingRight: '12px' }}>
@@ -233,54 +351,40 @@ const MarketplacePage = () => {
                 letterSpacing: '0.06em',
               }}
             >
-              Carbon Abatement
+              Company Subscription
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
               <span style={{ fontSize: '22px', fontWeight: 800, color: '#B8E36A', fontFamily: 'Inter, sans-serif' }}>
-                3,120
+                ₹2,500
               </span>
               <span style={{ fontSize: '12px', color: '#B8E36A', fontFamily: 'JetBrains Mono, monospace' }}>
-                tCO₂e
+                / year
               </span>
             </div>
-            <span style={{ fontSize: '10px', color: '#7B958B' }}>vs primary virgin raw</span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '4px' }}>
-            <div>
-              <span
-                style={{
-                  display: 'block',
-                  fontSize: '10px',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: '#7B958B',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Escrow Settlement
-              </span>
-              <span style={{ fontSize: '13px', fontWeight: 700, color: '#FAFBF7' }}>Bilateral Guaranteed</span>
-            </div>
-            <span className="material-symbols-outlined" style={{ fontSize: '22px', color: '#B8E36A' }}>
-              verified_user
-            </span>
+            <span style={{ fontSize: '10px', color: '#7B958B' }}>All authorized enterprise users</span>
           </div>
         </div>
       </section>
 
-      {/* ── Filter Strip & Search Dock ───────────────────────────────── */}
+      {/* ── Controls, Tabs & Search ──────────────────────────────────── */}
       <section
-        className="scrappy-card"
         style={{
-          padding: '16px 20px',
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
         }}
       >
-        {/* Stream Type Tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          {/* Main Stream Type Tabs */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
               onClick={() => setActiveStreamType('available')}
               style={{
@@ -293,6 +397,8 @@ const MarketplacePage = () => {
                 fontWeight: 700,
                 backgroundColor: activeStreamType === 'available' ? '#142D25' : '#EEEEE5',
                 color: activeStreamType === 'available' ? '#FAFBF7' : '#252D29',
+                border: 'none',
+                cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}
             >
@@ -314,6 +420,8 @@ const MarketplacePage = () => {
                 fontWeight: 700,
                 backgroundColor: activeStreamType === 'coming_soon' ? '#142D25' : '#EEEEE5',
                 color: activeStreamType === 'coming_soon' ? '#FAFBF7' : '#252D29',
+                border: 'none',
+                cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}
             >
@@ -322,35 +430,61 @@ const MarketplacePage = () => {
               </span>
               <span>Upcoming / Pre-Book Batches</span>
             </button>
+
+            <button
+              onClick={() => setActiveStreamType('my_listings')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 700,
+                backgroundColor: activeStreamType === 'my_listings' ? '#142D25' : '#EEEEE5',
+                color: activeStreamType === 'my_listings' ? '#FAFBF7' : '#252D29',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+                apartment
+              </span>
+              <span>My Company Listings & Certs</span>
+            </button>
           </div>
 
-          {/* Category Chips */}
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {[
-              { id: 'all', label: 'All Streams' },
-              { id: 'scrap', label: 'Production Scrap' },
-              { id: 'by_product', label: 'By-Products' },
-              { id: 'leftover', label: 'Leftover Materials' },
-            ].map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: selectedCategory === cat.id ? 700 : 500,
-                  backgroundColor: selectedCategory === cat.id ? '#B8E36A' : '#F4F4EB',
-                  color: selectedCategory === cat.id ? '#142D25' : '#252D29',
-                  border: '1px solid',
-                  borderColor: selectedCategory === cat.id ? '#B8E36A' : '#E1E6DF',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
+          {/* Category Chips (when not in my_listings) */}
+          {activeStreamType !== 'my_listings' && (
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {[
+                { id: 'all', label: 'All Streams' },
+                { id: 'scrap', label: 'Production Scrap' },
+                { id: 'by_product', label: 'By-Products' },
+                { id: 'leftover', label: 'Leftover Materials' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: selectedCategory === cat.id ? 700 : 500,
+                    backgroundColor: selectedCategory === cat.id ? '#B8E36A' : '#F4F4EB',
+                    color: selectedCategory === cat.id ? '#142D25' : '#252D29',
+                    border: '1px solid',
+                    borderColor: selectedCategory === cat.id ? '#B8E36A' : '#E1E6DF',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Search Bar */}
@@ -382,11 +516,14 @@ const MarketplacePage = () => {
       {/* ── Listings Grid ────────────────────────────────────────────── */}
       {loading ? (
         <div className="scrappy-card" style={{ padding: '60px', textAlign: 'center', color: '#68756D' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '32px', color: '#142D25', animation: 'spin 1s linear infinite' }}>
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: '32px', color: '#142D25', animation: 'spin 1s linear infinite' }}
+          >
             autorenew
           </span>
           <p style={{ marginTop: '12px', fontSize: '14px', fontWeight: 500 }}>
-            Loading active industrial scrap streams...
+            Loading material streams & certification data...
           </p>
         </div>
       ) : filtered.length === 0 ? (
@@ -394,9 +531,13 @@ const MarketplacePage = () => {
           <span className="material-symbols-outlined" style={{ fontSize: '36px', color: '#68756D', marginBottom: '8px' }}>
             filter_alt_off
           </span>
-          <h3 style={{ color: '#142D25', marginBottom: '6px', fontSize: '18px' }}>No Material Streams Found</h3>
+          <h3 style={{ color: '#142D25', marginBottom: '6px', fontSize: '18px' }}>
+            {activeStreamType === 'my_listings' ? 'No Company Listings Found' : 'No Material Streams Found'}
+          </h3>
           <p style={{ color: '#68756D', fontSize: '13px', margin: 0 }}>
-            No streams match your filter criteria. Try adjusting your search or create a new scrap listing.
+            {activeStreamType === 'my_listings'
+              ? 'Your enterprise has not submitted any material listings yet. Click "Create Material Listing" above.'
+              : 'No streams match your filter criteria. Try adjusting your search or create a new scrap listing.'}
           </p>
         </div>
       ) : (
@@ -446,8 +587,61 @@ const MarketplacePage = () => {
                       {l.material_category || 'Industrial'}
                     </span>
 
-                    {/* Compatibility Badge */}
-                    {l.compatibility && (
+                    {/* Quality Certificate Status Badge */}
+                    {activeStreamType === 'my_listings' ? (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          backgroundColor:
+                            l.quality_status === 'approved'
+                              ? '#D8F3DC'
+                              : l.quality_status === 'pending_review'
+                              ? '#FEFAE0'
+                              : '#FDE8E8',
+                          color:
+                            l.quality_status === 'approved'
+                              ? '#1B4332'
+                              : l.quality_status === 'pending_review'
+                              ? '#B07D05'
+                              : '#C81E1E',
+                          border: `1px solid ${
+                            l.quality_status === 'approved'
+                              ? '#B7E4C7'
+                              : l.quality_status === 'pending_review'
+                              ? '#E9D8A6'
+                              : '#FCA5A5'
+                          }`,
+                        }}
+                      >
+                        {l.quality_status === 'approved'
+                          ? '✓ Certified & Live'
+                          : l.quality_status === 'pending_review'
+                          ? '⏳ Review Pending'
+                          : '✕ Cert Rejected'}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: 'rgba(184, 227, 106, 0.3)',
+                          color: '#142D25',
+                          border: '1px solid #B8E36A',
+                        }}
+                      >
+                        ✓ Quality Certified
+                      </span>
+                    )}
+
+                    {/* Compatibility Badge for Public Browsing */}
+                    {activeStreamType !== 'my_listings' && l.compatibility && (
                       <span
                         style={{
                           fontSize: '10px',
@@ -506,7 +700,7 @@ const MarketplacePage = () => {
                     fontSize: '13px',
                     color: '#68756D',
                     lineHeight: 1.5,
-                    marginBottom: '16px',
+                    marginBottom: '14px',
                     display: '-webkit-box',
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: 'vertical',
@@ -516,6 +710,23 @@ const MarketplacePage = () => {
                   {l.description ||
                     'Verified industrial leftover stream ready for reprocessing or raw material substitution.'}
                 </p>
+
+                {/* Rejection Feedback Box if in My Listings */}
+                {activeStreamType === 'my_listings' && l.quality_certificate?.reviewer_comments && (
+                  <div
+                    style={{
+                      backgroundColor: '#FEF2F2',
+                      border: '1px solid #FCA5A5',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      marginBottom: '12px',
+                      fontSize: '11px',
+                      color: '#991B1B',
+                    }}
+                  >
+                    <strong>Reviewer Note:</strong> {l.quality_certificate.reviewer_comments}
+                  </div>
+                )}
 
                 {/* Processing tag */}
                 {l.is_processed && (
@@ -632,51 +843,82 @@ const MarketplacePage = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
                 }}
               >
-                {l.is_coming_soon ? (
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: '#68756D',
-                      fontWeight: 600,
-                      fontFamily: 'JetBrains Mono, monospace',
-                    }}
-                  >
-                    Expected: {l.expected_available_date ? new Date(l.expected_available_date).toLocaleDateString() : 'Upcoming'}
-                  </span>
-                ) : (
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: '#142D25',
-                      fontWeight: 700,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontFamily: 'JetBrains Mono, monospace',
-                    }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '15px', color: '#142D25' }}>
-                      verified
-                    </span>
-                    Instant Freight Quote
-                  </span>
-                )}
+                {activeStreamType === 'my_listings' ? (
+                  <div style={{ display: 'flex', gap: '8px', width: '100%', justifyContent: 'flex-end' }}>
+                    {l.quality_certificate && (
+                      <button
+                        onClick={() =>
+                          handleDownloadCertificate(
+                            l.quality_certificate.id,
+                            l.quality_certificate.original_filename
+                          )
+                        }
+                        className="btn-secondary"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>
+                          description
+                        </span>
+                        <span>View Certificate</span>
+                      </button>
+                    )}
 
-                <button
-                  onClick={() => handleOpenOrder(l)}
-                  className="btn-primary"
-                  style={{
-                    padding: '8px 16px',
-                    fontSize: '13px',
-                  }}
-                >
-                  <span>{l.is_coming_soon ? 'Pre-Book Lot' : 'Procure / Order'}</span>
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
-                    arrow_forward
-                  </span>
-                </button>
+                    {(l.quality_status === 'rejected' ||
+                      l.quality_status === 'draft' ||
+                      l.quality_status === 'additional_info_required') && (
+                      <button
+                        onClick={() => {
+                          setResubmitListing(l);
+                          setResubmitModalOpen(true);
+                        }}
+                        className="btn-primary"
+                        style={{ padding: '6px 14px', fontSize: '12px' }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>
+                          upload
+                        </span>
+                        <span>Resubmit Certificate</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: '#142D25',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '15px', color: '#142D25' }}>
+                        verified
+                      </span>
+                      Instant Freight Quote
+                    </span>
+
+                    <button
+                      onClick={() => handleOpenOrder(l)}
+                      className="btn-primary"
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                      }}
+                    >
+                      <span>{l.is_coming_soon ? 'Pre-Book Lot' : 'Procure / Order'}</span>
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+                        arrow_forward
+                      </span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -696,6 +938,17 @@ const MarketplacePage = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreated={() => fetchListings()}
+      />
+
+      {/* ── Resubmit Quality Certificate Modal ──────────────────────── */}
+      <ResubmitCertificateModal
+        isOpen={resubmitModalOpen}
+        onClose={() => {
+          setResubmitModalOpen(false);
+          setResubmitListing(null);
+        }}
+        listing={resubmitListing}
+        onResubmitted={() => fetchListings()}
       />
     </div>
   );

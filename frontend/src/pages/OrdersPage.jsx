@@ -689,6 +689,19 @@ const OrdersPage = () => {
                           >
                             Freight: ₹{o.freight_cost?.toLocaleString()} ({o.distance_km} km)
                           </div>
+                          {o.commission && o.commission.is_eligible && (
+                            <div
+                              style={{
+                                fontSize: '10px',
+                                color: '#166534',
+                                fontFamily: 'JetBrains Mono, monospace',
+                                marginTop: '2px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              Comm: ₹{o.commission.total_commission?.toLocaleString()} (Share: ₹{isSeller ? o.commission.seller_contribution?.toLocaleString() : o.commission.buyer_contribution?.toLocaleString()})
+                            </div>
+                          )}
                         </td>
 
                         <td>

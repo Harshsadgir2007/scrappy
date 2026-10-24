@@ -2,14 +2,16 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
-// Request interceptor to attach access token
+// Request interceptor to attach access token and handle FormData boundary
 api.interceptors.request.use(
   (config) => {
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    } else if (!config.headers['Content-Type']) {
+      config.headers['Content-Type'] = 'application/json';
+    }
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;

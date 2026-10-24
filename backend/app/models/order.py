@@ -2,7 +2,8 @@
 Order ORM model.
 
 Represents a purchase request placed by a company for variable tons of a listing.
-Includes order tracking lifecycle (pending -> approved -> dispatched -> in_transit -> delivered).
+Includes order tracking lifecycle (pending -> approved -> dispatched -> in_transit -> delivered),
+and platform transaction commission tracking for material values > INR 5,00,000.
 """
 
 from datetime import datetime, timezone
@@ -87,3 +88,4 @@ class Order(Base):
     listing = relationship("Listing", back_populates="orders", lazy="joined")
     buyer_company = relationship("Company", foreign_keys=[buyer_company_id], lazy="joined")
     seller_company = relationship("Company", foreign_keys=[seller_company_id], lazy="joined")
+    commission = relationship("TransactionCommission", back_populates="order", uselist=False, lazy="joined", cascade="all, delete-orphan")

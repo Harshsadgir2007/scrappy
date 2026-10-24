@@ -1,7 +1,7 @@
 """
 Marketplace and Order business logic service.
 Implements 3-part landed cost calculation, quantity reservation, trade approvals,
-order dispatch tracking, and circular inventory fulfillment.
+order dispatch tracking, transaction commission calculation, and circular inventory fulfillment.
 """
 
 import json
@@ -31,6 +31,10 @@ from app.services.intelligence_service import (
     verify_processing_price,
     verify_quantity_sanity,
 )
+from app.services.commission_service import (
+    compute_commission_breakdown,
+    record_or_update_order_commission,
+)
 from app.services.notification_service import create_notification
 
 
@@ -43,6 +47,7 @@ def calculate_cost_bill(
 
     Formula: Total = (Material Price + Processing Price) * Tons + Freight Fee
     Freight Fee = (Distance km * Freight Rate * Tons) + Tolls
+    Also computes 0.5% platform transaction commission breakdown for material values > ₹5,00,000.
     """
     # 1. Material cost
     mat_cost = round(listing.price_per_ton * requested_tons, 2)
@@ -53,27 +58,22 @@ def calculate_cost_bill(
         proc_cost = round(listing.processing_cost_per_ton * requested_tons, 2)
 
     # 3. Geo Distance & Transport cost
-    # Get seller coords
     s_lat = listing.pickup_latitude
     s_lon = listing.pickup_longitude
     if not s_lat or not s_lon:
         s_lat, s_lon = get_coordinates_for_city(listing.pickup_city)
 
-    # Get buyer coords
     b_lat = buyer_company.latitude
     b_lon = buyer_company.longitude
     if not b_lat or not b_lon:
         b_lat, b_lon = get_coordinates_for_city(buyer_company.city)
 
     distance = haversine_distance(s_lat, s_lon, b_lat, b_lon)
-    # Minimum realistic distance threshold
     distance = max(distance, 15.0)
 
-    # Use listing specified freight rate or standard freight rate ~ INR 3.5 per ton per km
     freight_rate = listing.freight_rate_per_ton_km if listing.freight_rate_per_ton_km else 3.5
     freight_cost = round(distance * freight_rate * requested_tons, 2)
 
-    # Toll estimate: use listing's toll estimate if provided, else distance estimate
     if listing.toll_estimate and listing.toll_estimate > 0:
         tolls = round(listing.toll_estimate, 2)
     else:
@@ -81,6 +81,9 @@ def calculate_cost_bill(
 
     total_landed = round(mat_cost + proc_cost + freight_cost + tolls, 2)
     effective_rate = round(total_landed / requested_tons, 2)
+
+    # Commission calculation on pure material value
+    comm = compute_commission_breakdown(mat_cost)
 
     return BillEstimateResponse(
         listing_id=listing.id,
@@ -96,16 +99,16 @@ def calculate_cost_bill(
         toll_estimate=tolls,
         total_landed_cost=total_landed,
         effective_landed_price_per_ton=effective_rate,
+        commission=comm,
     )
 
 
 # ── Listing Services ───────────────────────────────────────────────────
 
-def create_listing(company: Company, payload: ListingCreate, db: Session) -> Listing:
+def create_listing(company: Company, payload: ListingCreate, db: Session, initial_quality_status: str = "approved") -> Listing:
     if payload.price_per_ton < payload.min_price_floor:
         raise ValueError("Price per ton cannot be lower than the minimum price floor.")
 
-    # Geocode coordinates if not sent
     lat = payload.pickup_latitude
     lon = payload.pickup_longitude
     if not lat or not lon:
@@ -140,6 +143,7 @@ def create_listing(company: Company, payload: ListingCreate, db: Session) -> Lis
         expected_available_date=payload.expected_available_date,
         expected_tons=payload.expected_tons or payload.total_tons,
         status=listing_status,
+        quality_status=initial_quality_status,
     )
     db.add(listing)
     db.commit()
@@ -158,7 +162,8 @@ def list_marketplace_listings(
     skip: int = 0,
     limit: int = 50,
 ) -> list[ListingResponse]:
-    query = db.query(Listing).filter(Listing.remaining_tons > 0)
+    # Only show listings that have approved quality status in public browse
+    query = db.query(Listing).filter(Listing.remaining_tons > 0).filter(Listing.quality_status == "approved")
 
     if is_coming_soon is not None:
         if is_coming_soon:
@@ -191,6 +196,17 @@ def list_marketplace_listings(
         if viewing_company:
             compat = check_compatibility(l, viewing_company)
 
+        cert_preview = None
+        if l.quality_certificate:
+            cert_preview = {
+                "id": l.quality_certificate.id,
+                "certificate_number": l.quality_certificate.certificate_number,
+                "testing_lab_name": l.quality_certificate.testing_lab_name,
+                "lab_accreditation": l.quality_certificate.lab_accreditation,
+                "review_status": l.quality_certificate.review_status,
+                "original_filename": l.quality_certificate.original_filename,
+            }
+
         results.append(
             ListingResponse(
                 id=l.id,
@@ -215,6 +231,8 @@ def list_marketplace_listings(
                 pickup_city=l.pickup_city,
                 pickup_state=l.pickup_state,
                 compatibility=compat,
+                quality_status=l.quality_status,
+                quality_certificate=cert_preview,
                 is_coming_soon=l.is_coming_soon,
                 expected_available_date=l.expected_available_date,
                 expected_tons=l.expected_tons,
@@ -303,6 +321,9 @@ def place_order(buyer_company: Company, payload: OrderCreate, db: Session) -> Or
     db.commit()
     db.refresh(order)
 
+    # Calculate and store commission record if material value > INR 5,00,000
+    record_or_update_order_commission(order, db)
+
     # Dispatch in-app notification to Seller
     create_notification(
         db=db,
@@ -340,7 +361,6 @@ def handle_order_action(
     if payload.action == "approve":
         order.status = "approved"
         order.seller_notes = payload.seller_notes
-        # Deduct permanently from reserved tons
         listing.reserved_tons = max(0.0, round(listing.reserved_tons - order.requested_tons, 2))
         if listing.remaining_tons <= 0 and listing.reserved_tons <= 0:
             listing.status = "closed"
@@ -354,7 +374,9 @@ def handle_order_action(
         })
         order.tracking_history = json.dumps(history)
 
-        # Dispatch notification to Buyer
+        # Finalize commission calculation for approved order
+        record_or_update_order_commission(order, db)
+
         create_notification(
             db=db,
             company_id=order.buyer_company_id,
@@ -367,7 +389,6 @@ def handle_order_action(
     elif payload.action == "reject":
         order.status = "rejected"
         order.seller_notes = payload.seller_notes
-        # Release reserved tons back to remaining
         listing.reserved_tons = max(0.0, round(listing.reserved_tons - order.requested_tons, 2))
         listing.remaining_tons = round(listing.remaining_tons + order.requested_tons, 2)
 
@@ -396,10 +417,21 @@ def handle_order_action(
         order.counter_tons = payload.counter_tons
         order.seller_notes = payload.seller_notes
 
-        # Adjust reserved difference
         diff = order.requested_tons - payload.counter_tons
         listing.reserved_tons = max(0.0, round(listing.reserved_tons - diff, 2))
         listing.remaining_tons = round(listing.remaining_tons + diff, 2)
+
+        # Recalculate financial costs for the new countered volume
+        bill = calculate_cost_bill(listing, order.buyer_company, payload.counter_tons)
+        order.requested_tons = payload.counter_tons
+        order.material_cost = bill.material_cost
+        order.processing_cost = bill.processing_cost
+        order.freight_cost = bill.freight_cost
+        order.toll_estimate = bill.toll_estimate
+        order.total_landed_cost = bill.total_landed_cost
+
+        # Recompute commission on updated material value
+        record_or_update_order_commission(order, db)
 
         history.append({
             "status": "countered",
@@ -439,25 +471,26 @@ def dispatch_order(
     if order.seller_company_id != seller_company.id:
         raise ValueError("Unauthorized. Only the seller can dispatch this consignment.")
 
-    if order.status not in ("approved", "countered"):
-        raise ValueError(f"Cannot dispatch order in '{order.status}' status. Order must be approved first.")
+    if order.status != "approved":
+        raise ValueError(f"Cannot dispatch order in '{order.status}' status. Must be 'approved'.")
 
     now = datetime.now(timezone.utc)
+    est_date = now + timedelta(days=payload.estimated_delivery_days)
+
     order.status = "dispatched"
     order.carrier_name = payload.carrier_name
     order.vehicle_number = payload.vehicle_number
     order.driver_phone = payload.driver_phone
     order.dispatch_date = now
-    order.estimated_delivery_date = now + timedelta(days=payload.estimated_delivery_days)
-    origin_city = order.listing.pickup_city if order.listing else seller_company.city
-    order.current_location = f"Dispatched from {origin_city} Facility"
+    order.estimated_delivery_date = est_date
+    order.current_location = f"{seller_company.city} Facility (Dispatched)"
 
     history = json.loads(order.tracking_history) if order.tracking_history else []
     history.append({
         "status": "dispatched",
         "title": "Consignment Dispatched",
-        "location": f"{origin_city}, {order.listing.pickup_state if order.listing else seller_company.state}",
-        "notes": f"Carrier: {payload.carrier_name} | Vehicle No: {payload.vehicle_number}" + (f" | Driver: {payload.driver_phone}" if payload.driver_phone else "") + (f" | Note: {payload.dispatch_notes}" if payload.dispatch_notes else ""),
+        "location": f"{seller_company.city}, {seller_company.state}",
+        "notes": f"Carrier: {payload.carrier_name} | Truck: {payload.vehicle_number}. {payload.dispatch_notes or ''}",
         "timestamp": now.isoformat(),
     })
     order.tracking_history = json.dumps(history)
@@ -465,15 +498,11 @@ def dispatch_order(
     db.commit()
     db.refresh(order)
 
-    # Notify Buyer of dispatch
     create_notification(
         db=db,
         company_id=order.buyer_company_id,
-        title="Order Dispatched!",
-        message=(
-            f"Consignment for Order #{order.order_number} ({order.requested_tons} Tons) has been dispatched "
-            f"via {payload.carrier_name} (Vehicle: {payload.vehicle_number})."
-        ),
+        title="Consignment Dispatched! 🚚",
+        message=f"Order #{order.order_number} has been dispatched via {payload.carrier_name} ({payload.vehicle_number}).",
         notif_type="order_dispatched",
         link="/orders",
     )
@@ -491,50 +520,38 @@ def update_order_tracking(
         raise ValueError("Order not found.")
 
     if company.id not in (order.seller_company_id, order.buyer_company_id):
-        raise ValueError("Unauthorized to update tracking for this order.")
+        raise ValueError("Unauthorized. You are not a party to this transaction.")
 
     now = datetime.now(timezone.utc)
     order.status = payload.status
     order.current_location = payload.current_location
 
     history = json.loads(order.tracking_history) if order.tracking_history else []
-    title = "In Transit - Checkpoint Update" if payload.status == "in_transit" else "Delivery Progress"
     history.append({
         "status": payload.status,
-        "title": title,
+        "title": f"Milestone: {payload.status.replace('_', ' ').title()}",
         "location": payload.current_location,
-        "notes": payload.notes or "Consignment advancing on highway logistics corridor.",
+        "notes": payload.notes or f"Transit update: reached {payload.current_location}",
         "timestamp": now.isoformat(),
     })
     order.tracking_history = json.dumps(history)
 
     db.commit()
     db.refresh(order)
-
-    # Notify counterpart
-    other_party_id = order.buyer_company_id if company.id == order.seller_company_id else order.seller_company_id
-    create_notification(
-        db=db,
-        company_id=other_party_id,
-        title="Transit Checkpoint Update",
-        message=f"Order #{order.order_number} checkpoint: {payload.current_location}.",
-        notif_type="tracking_update",
-        link="/orders",
-    )
     return order
 
 
 def deliver_order(
     order_id: int,
-    company: Company,
+    buyer_company: Company,
     db: Session,
 ) -> Order:
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise ValueError("Order not found.")
 
-    if company.id not in (order.seller_company_id, order.buyer_company_id):
-        raise ValueError("Unauthorized to confirm delivery for this order.")
+    if order.buyer_company_id != buyer_company.id:
+        raise ValueError("Unauthorized. Only the buyer can confirm final delivery acceptance.")
 
     if order.status in ("delivered", "completed"):
         return order
@@ -558,16 +575,15 @@ def deliver_order(
     })
     order.tracking_history = json.dumps(history)
 
-    # ── 1. Create Immutable Trade Record for Both Parties ──
+    # 1. Create Immutable Trade Record for Both Parties
     from app.services.trade_service import record_trade_from_order
     record_trade_from_order(order, db)
 
-    # ── 2. Cross-Synchronize Inventory at Both Ends ──
+    # 2. Cross-Synchronize Inventory at Both Ends
     from app.services.inventory_service import deduct_inventory_on_delivery, credit_inventory_on_delivery
     mat_name = order.listing.material.name if order.listing and order.listing.material else "Scrap"
     cat = order.listing.category if order.listing else "scrap"
 
-    # Deduct from seller's physical inventory
     deduct_inventory_on_delivery(
         company_id=order.seller_company_id,
         material_name=mat_name,
@@ -576,8 +592,8 @@ def deliver_order(
         db=db,
     )
 
-    # Credit into buyer's physical inventory
     cost_per_ton = order.material_cost / order.requested_tons if order.requested_tons else 0.0
+    proc_cost_per_ton = order.processing_cost / order.requested_tons if (order.requested_tons and order.listing and order.listing.is_processed) else 0.0
     credit_inventory_on_delivery(
         buyer_company=order.buyer_company,
         material_name=mat_name,
@@ -585,7 +601,7 @@ def deliver_order(
         tons=order.requested_tons,
         cost_per_ton=cost_per_ton,
         is_processed=order.listing.is_processed if order.listing else False,
-        processed_cost=order.listing.processing_cost_per_ton if order.listing else 0.0,
+        processed_cost=proc_cost_per_ton,
         db=db,
     )
 
@@ -613,7 +629,6 @@ def deliver_order(
 
 
 def serialize_order(order: Order, viewing_company_id: int) -> OrderResponse:
-    # Strict confidentiality: reveal real identity only upon approval or further stages
     is_approved = order.status in ("approved", "dispatched", "in_transit", "delivered", "completed")
     is_seller = viewing_company_id == order.seller_company_id
     is_buyer = viewing_company_id == order.buyer_company_id
@@ -637,6 +652,23 @@ def serialize_order(order: Order, viewing_company_id: int) -> OrderResponse:
         except Exception:
             history_list = []
 
+    comm_dict = None
+    if order.commission:
+        c = order.commission
+        comm_dict = {
+            "is_eligible": c.total_commission > 0,
+            "material_transaction_value": c.material_transaction_value,
+            "commission_rate": c.commission_rate,
+            "total_commission": c.total_commission,
+            "buyer_rate": c.buyer_rate,
+            "buyer_contribution": c.buyer_contribution,
+            "seller_rate": c.seller_rate,
+            "seller_contribution": c.seller_contribution,
+            "status": c.status,
+            "buyer_collection_status": c.buyer_collection_status,
+            "seller_collection_status": c.seller_collection_status,
+        }
+
     return OrderResponse(
         id=order.id,
         order_number=order.order_number,
@@ -655,6 +687,7 @@ def serialize_order(order: Order, viewing_company_id: int) -> OrderResponse:
         freight_cost=order.freight_cost,
         toll_estimate=order.toll_estimate,
         total_landed_cost=order.total_landed_cost,
+        commission=comm_dict,
         status=order.status,
         carrier_name=order.carrier_name,
         vehicle_number=order.vehicle_number,

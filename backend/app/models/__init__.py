@@ -10,6 +10,9 @@ from app.models.notification import Notification
 from app.models.order import Order
 from app.models.trade import TradeHistory
 from app.models.user import User
+from app.models.subscription import CompanySubscription, SubscriptionPayment
+from app.models.commission import TransactionCommission
+from app.models.quality import MaterialQualityRequirement, QualityTestCertificate, QualityReviewLog
 
 __all__ = [
     "User",
@@ -21,4 +24,10 @@ __all__ = [
     "Notification",
     "InventoryItem",
     "TradeHistory",
+    "CompanySubscription",
+    "SubscriptionPayment",
+    "TransactionCommission",
+    "MaterialQualityRequirement",
+    "QualityTestCertificate",
+    "QualityReviewLog",
 ]

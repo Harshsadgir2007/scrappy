@@ -17,7 +17,11 @@ from app.models.notification import Notification
 from app.models.order import Order
 from app.models.trade import TradeHistory
 from app.models.user import User
-from app.utils.file_storage import ensure_upload_dir
+from app.models.subscription import CompanySubscription, SubscriptionPayment
+from app.models.commission import TransactionCommission
+from app.models.quality import MaterialQualityRequirement, QualityTestCertificate, QualityReviewLog
+from app.services.quality_service import seed_default_quality_requirements
+from app.utils.file_storage import ensure_upload_dir, encrypt_and_save
 from app.utils.security import hash_password
 
 
@@ -63,6 +67,7 @@ def reset_and_seed():
         db.add_all([m_textile, m_metal, m_flyash])
         db.flush()
         print("[OK] Created 3 prototype materials (Textile waste, Metal scrap, Fly ash)")
+        seed_default_quality_requirements(db)
 
         # ── 2. Demo Enterprises (Single-login dual-capability) ────────
         c_greensteel = Company(
@@ -173,7 +178,39 @@ def reset_and_seed():
         )
         db.add_all([u1, u2, u3, u_admin])
         db.flush()
-        print("[OK] Created 3 enterprise accounts (GreenSteel, EcoBuild, TexTech)")
+
+        now = datetime.now(timezone.utc)
+        one_year_later = now + timedelta(days=365)
+        for comp in [c_greensteel, c_ecobuild, c_textech]:
+            sub = CompanySubscription(
+                company_id=comp.id,
+                status="active",
+                annual_fee=2500.0,
+                currency="INR",
+                start_date=now,
+                expiry_date=one_year_later,
+                payment_status="paid",
+                payment_reference=f"pay_seed_{comp.id}",
+                last_renewed_at=now,
+            )
+            db.add(sub)
+            db.flush()
+            pay = SubscriptionPayment(
+                subscription_id=sub.id,
+                company_id=comp.id,
+                amount=2500.0,
+                currency="INR",
+                payment_gateway="razorpay",
+                gateway_order_id=f"order_seed_{comp.id}",
+                gateway_payment_id=f"pay_seed_{comp.id}",
+                status="success",
+                period_start=now,
+                period_end=one_year_later,
+                notes="Seed annual subscription activated",
+            )
+            db.add(pay)
+        db.flush()
+        print("[OK] Created 3 enterprise accounts (GreenSteel, EcoBuild, TexTech) with active subscriptions")
 
         # ── 3. Seed Enterprise Inventory Items ────────────────────────
         inv_steel_1 = InventoryItem(
@@ -387,9 +424,49 @@ def reset_and_seed():
             status="coming_soon",
         )
 
+        l1.quality_status = "approved"
+        l2.quality_status = "approved"
+        l3.quality_status = "approved"
+        l4.quality_status = "approved"
         db.add_all([l1, l2, l3, l4])
         db.flush()
-        print("[OK] Created 4 marketplace listings (3 ready stock + 1 pre-book stream)")
+
+        sample_pdf_bytes = b"%PDF-1.4\n1 0 obj\n<<\n/Title (Quality Test Certificate)\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF"
+        for idx, listing_obj in enumerate([l1, l2, l3, l4], start=1):
+            cert_file_path = encrypt_and_save(sample_pdf_bytes, f"cert_sample_listing_{listing_obj.id}.pdf", subfolder="certificates")
+            test_params = {
+                "ferrous_content_pct": 98.2 if listing_obj.material_id == m_metal.id else 0,
+                "sio2_al2o3_pct": 82.5 if listing_obj.material_id == m_flyash.id else 0,
+                "fiber_composition": 99.1 if listing_obj.material_id == m_textile.id else 0,
+                "moisture_pct": 2.1,
+            }
+            cert = QualityTestCertificate(
+                id=idx,
+                listing_id=listing_obj.id,
+                company_id=listing_obj.company_id,
+                material_id=listing_obj.material_id,
+                material_category=listing_obj.category,
+                material_grade="Certified Industrial Grade",
+                test_name=f"Standard Quality Compliance Test for {listing_obj.title[:30]}",
+                testing_lab_name="National Metallurgical & Material Testing Labs (NABL #TC-5982)",
+                lab_accreditation="ISO/IEC 17025:2017 & NABL Accredited",
+                certificate_number=f"NABL-TC-{202600 + idx}",
+                test_date=now - timedelta(days=10),
+                valid_until=now + timedelta(days=355),
+                parameters_data=json.dumps(test_params),
+                test_result_summary="Tested and conforms to national industry standards.",
+                file_path=cert_file_path,
+                original_filename=f"quality_report_{listing_obj.id}.pdf",
+                file_size_bytes=len(sample_pdf_bytes),
+                mime_type="application/pdf",
+                review_status="approved",
+                reviewed_by=u_admin.id,
+                reviewed_at=now - timedelta(days=9),
+                reviewer_comments="Verified against NABL accreditation and test parameter benchmarks.",
+            )
+            db.add(cert)
+        db.flush()
+        print("[OK] Created 4 marketplace listings with approved quality test certificates")
 
         # ── 5. Orders & Tracking Milestones ─────────────────────────
         # Order 1: Approved, ready for dispatch (EcoBuild buys Fly Ash from GreenSteel)
@@ -505,6 +582,22 @@ def reset_and_seed():
         db.add_all([order1, order2])
         db.flush()
 
+        comm2 = TransactionCommission(
+            order_id=order2.id,
+            material_transaction_value=order2.material_cost,
+            commission_rate=0.005,
+            total_commission=round(order2.material_cost * 0.005, 2),
+            buyer_rate=0.0025,
+            buyer_contribution=round(order2.material_cost * 0.0025, 2),
+            seller_rate=0.0025,
+            seller_contribution=round(order2.material_cost * 0.0025, 2),
+            status="calculated",
+            buyer_collection_status="uncollected",
+            seller_collection_status="uncollected",
+        )
+        db.add(comm2)
+        db.flush()
+
         # ── 6. Permanent Trade History (Recorded for BOTH Buyer & Seller) ──
         trade1 = TradeHistory(
             id=1,
@@ -534,6 +627,8 @@ def reset_and_seed():
             notes="Trade successfully finalized and recorded in both Buyer (EcoBuild) and Seller (GreenSteel) ledgers.",
         )
         db.add(trade1)
+        db.flush()
+        comm2.trade_id = trade1.id
 
         # Initial Notification
         notif = Notification(

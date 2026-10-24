@@ -1,6 +1,6 @@
 """
-FastAPI dependencies for authentication, role enforcement, and
-company verification checks.
+FastAPI dependencies for authentication, role enforcement,
+company verification, and active subscription checks.
 """
 
 from typing import Callable
@@ -59,20 +59,7 @@ def get_current_user(
 
 
 def require_role(*roles: str) -> Callable:
-    """Dependency factory that restricts access to users with specific roles.
-
-    Usage::
-
-        @router.get("/admin-only")
-        def admin_endpoint(user: User = Depends(require_role("admin"))):
-            ...
-
-    Args:
-        *roles: Allowed role strings (e.g. "admin", "seller").
-
-    Returns:
-        A FastAPI dependency that returns the current user if authorised.
-    """
+    """Dependency factory that restricts access to users with specific roles."""
 
     def _role_checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
@@ -86,16 +73,10 @@ def require_role(*roles: str) -> Callable:
 
 
 def require_verified_company() -> Callable:
-    """Dependency factory that ensures the user's company is verified.
-
-    Returns:
-        A FastAPI dependency that returns the current user if their
-        company has ``verification_status == 'verified'``.
-    """
+    """Dependency factory that ensures the user's company is verified."""
 
     def _verified_checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role == "admin":
-            # Admins bypass company verification checks
             return current_user
 
         if current_user.company is None:
@@ -113,3 +94,29 @@ def require_verified_company() -> Callable:
         return current_user
 
     return _verified_checker
+
+
+def require_active_subscription() -> Callable:
+    """Dependency that ensures the user's company holds an active, unexpired subscription.
+
+    Admins bypass subscription checks.
+    All authorized users belonging to the company share the subscription status.
+    """
+
+    def _subscription_checker(
+        current_user: User = Depends(require_verified_company()),
+        db: Session = Depends(get_db),
+    ) -> User:
+        if current_user.role == "admin":
+            return current_user
+
+        from app.services.subscription_service import is_company_subscription_active
+        if not is_company_subscription_active(current_user.company_id, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Active company subscription required (₹2,500/year). Please renew your subscription to access marketplace operations.",
+            )
+
+        return current_user
+
+    return _subscription_checker
