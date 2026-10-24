@@ -37,15 +37,25 @@ from app.services.quality_service import seed_default_quality_requirements
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle for the FastAPI application."""
     # ── Startup ─────────────────────────────────────────────────────
-    Base.metadata.create_all(bind=engine)
-    ensure_upload_dir()
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Startup metadata warning: {e}")
+
+    try:
+        ensure_upload_dir()
+    except Exception as e:
+        print(f"Startup upload dir warning: {e}")
 
     # Seed default material testing requirements
-    db = SessionLocal()
     try:
-        seed_default_quality_requirements(db)
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            seed_default_quality_requirements(db)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Startup seeding warning: {e}")
 
     yield
     # ── Shutdown ────────────────────────────────────────────────────

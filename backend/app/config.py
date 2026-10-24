@@ -57,8 +57,8 @@ class Settings:
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
     # ── File uploads ────────────────────────────────────────────────────
-    UPLOAD_DIR: Path = DEFAULT_UPLOAD_DIR
-    CERTIFICATES_DIR: Path = DEFAULT_CERTS_DIR
+    UPLOAD_DIR: Path = Path(os.getenv("UPLOAD_DIR", str(DEFAULT_UPLOAD_DIR)))
+    CERTIFICATES_DIR: Path = Path(os.getenv("CERTIFICATES_DIR", str(DEFAULT_CERTS_DIR)))
     MAX_UPLOAD_SIZE_BYTES: int = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(10 * 1024 * 1024)))  # 10 MB
 
     # ── Encryption (Fernet) for license & test certificate files ─────────
