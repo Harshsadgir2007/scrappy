@@ -3,11 +3,8 @@ import sys
 import shutil
 import traceback
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, PlainTextResponse
-
-# Create the primary FastAPI application immediately
-app = FastAPI(title="Scrappy Serverless API")
 
 initialization_error = None
 db_status = {}
@@ -49,13 +46,11 @@ try:
 
     # Import the main backend app
     from app.main import app as backend_app
-
-    # Mount all backend routes into this app
-    for route in backend_app.routes:
-        app.routes.append(route)
+    app = backend_app
 
 except Exception as e:
     initialization_error = traceback.format_exc()
+    app = FastAPI(title="Scrappy Diagnostic Fallback")
 
 
 @app.get("/api/test")
