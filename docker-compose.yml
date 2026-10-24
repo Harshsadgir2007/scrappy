@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: scrappy_db
+    restart: always
+    environment:
+      POSTGRES_USER: scrappy
+      POSTGRES_PASSWORD: scrappy_secret_password
+      POSTGRES_DB: scrappy
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: scrappy_backend
+    restart: always
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgresql://scrappy:scrappy_secret_password@db:5432/scrappy
+      - JWT_SECRET_KEY=production_jwt_secret_change_me_123456789
+      - ENCRYPTION_KEY=6kfjYKM-PWu6aYvF_T6ijEdKUphdcLxIrSHe6ZN3Cnw=
+      - PORT=8000
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: scrappy_frontend
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
