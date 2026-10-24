@@ -1,0 +1,115 @@
+/* ======================================================
+   COMPANY PROFILE STYLES
+   ====================================================== */
+
+.company-profile {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.company-profile__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.company-profile__header h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.company-profile__card {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-xl);
+  margin-bottom: var(--space-lg);
+}
+
+.company-profile__card-title {
+  font-size: var(--font-size-lg);
+  color: var(--color-primary);
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 2px solid rgba(45, 106, 79, 0.15);
+}
+
+.company-profile__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg);
+}
+
+.company-profile__field {
+  margin-bottom: var(--space-md);
+}
+
+.company-profile__label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-xs);
+}
+
+.company-profile__value {
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.company-profile__value--mono {
+  font-family: var(--font-mono);
+}
+
+.company-profile__products {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.company-profile__product-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  background-color: rgba(45, 106, 79, 0.1);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+
+/* License Section */
+.company-profile__license {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.company-profile__license-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.company-profile__license-icon {
+  font-size: 2rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .company-profile__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .company-profile__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

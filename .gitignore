@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production builds
+dist/
+dist-ssr/
+frontend/dist/
+
+# Python cache & artifacts
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+
+# Environment & credentials
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Uploads and temporary storage
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# SQLite database files
+*.db
+*.sqlite3
+*.db-journal
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# Temporary visual reference exports
+stitch_*

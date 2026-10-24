@@ -1,0 +1,176 @@
+/* ======================================================
+   AUTH STYLES — Login & Register Forms
+   ====================================================== */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 50%, var(--color-primary-light) 100%);
+  padding: var(--space-lg);
+}
+
+.auth-card {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 440px;
+  padding: var(--space-xxl) var(--space-xl);
+}
+
+.auth-card--register {
+  max-width: 900px;
+}
+
+.auth-card__header {
+  text-align: center;
+  margin-bottom: var(--space-xl);
+}
+
+.auth-card__logo {
+  font-size: var(--font-size-3xl);
+  margin-bottom: var(--space-sm);
+}
+
+.auth-card__title {
+  font-size: var(--font-size-2xl);
+  color: var(--color-primary-dark);
+  margin-bottom: var(--space-xs);
+}
+
+.auth-card__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+}
+
+/* Login Form */
+.login-form__actions {
+  margin-top: var(--space-lg);
+}
+
+.login-form__footer {
+  text-align: center;
+  margin-top: var(--space-lg);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+}
+
+.login-form__link {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.login-form__link:hover {
+  text-decoration: underline;
+}
+
+/* Register Form */
+.register-form__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xl);
+}
+
+.register-form__section {
+  /* No special styling needed */
+}
+
+.register-form__section-title {
+  font-size: var(--font-size-lg);
+  color: var(--color-primary);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 2px solid var(--color-primary-light);
+}
+
+.register-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.register-form__products-input {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.register-form__products-input .form-input {
+  flex: 1;
+}
+
+.register-form__products-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.register-form__product-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 4px 10px;
+  background-color: rgba(45, 106, 79, 0.1);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+
+.register-form__product-tag button {
+  display: flex;
+  align-items: center;
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+}
+
+.register-form__product-tag button:hover {
+  color: var(--color-error);
+}
+
+.register-form__actions {
+  grid-column: 1 / -1;
+  margin-top: var(--space-lg);
+}
+
+.register-form__footer {
+  text-align: center;
+  margin-top: var(--space-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+}
+
+.register-form__link {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.register-form__link:hover {
+  text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .auth-card {
+    padding: var(--space-xl) var(--space-lg);
+  }
+
+  .auth-card--register {
+    max-width: 100%;
+  }
+
+  .register-form__grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg);
+  }
+
+  .register-form__row {
+    grid-template-columns: 1fr;
+  }
+
+  .register-form__actions {
+    grid-column: 1;
+  }
+}
