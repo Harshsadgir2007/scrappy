@@ -3,60 +3,75 @@ import sys
 import shutil
 import traceback
 from pathlib import Path
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 
-# Resolve directory paths so app package is discovered
-API_DIR = Path(__file__).resolve().parent
-if str(API_DIR) not in sys.path:
-    sys.path.insert(0, str(API_DIR))
+# Create the primary FastAPI application immediately
+app = FastAPI(title="Scrappy Serverless API")
 
-# Serverless environment: AWS Lambda/Vercel /tmp is the only writable directory
-tmp_dir = Path("/tmp")
-tmp_db = tmp_dir / "pragyan.db"
-tmp_uploads = tmp_dir / "uploads" / "certificates"
-try:
-    tmp_uploads.mkdir(parents=True, exist_ok=True)
-except Exception:
-    pass
-
-# Copy pre-seeded database to writable /tmp on cold start if not already there
-if not tmp_db.exists() or tmp_db.stat().st_size == 0:
-    for candidate in [
-        API_DIR / "pragyan.db",
-        API_DIR.parent / "backend" / "pragyan.db",
-        API_DIR.parent / "pragyan.db",
-        API_DIR.parent / "api" / "pragyan.db",
-    ]:
-        if candidate.exists() and candidate.stat().st_size > 0:
-            try:
-                shutil.copy2(str(candidate), str(tmp_db))
-                break
-            except Exception as e:
-                print(f"Error copying db: {e}")
-
-os.environ["DATABASE_URL"] = f"sqlite:///{tmp_db}"
-os.environ["UPLOAD_DIR"] = str(tmp_dir / "uploads")
-os.environ["CERTIFICATES_DIR"] = str(tmp_uploads)
+initialization_error = None
+db_status = {}
 
 try:
-    from app.main import app
-    
-    @app.middleware("http")
-    async def catch_exceptions_middleware(request, call_next):
-        try:
-            return await call_next(request)
-        except Exception as e:
-            tb = traceback.format_exc()
-            from starlette.responses import PlainTextResponse
-            return PlainTextResponse(f"BACKEND_RUNTIME_EXCEPTION:\n{tb}", status_code=500)
+    API_DIR = Path(__file__).resolve().parent
+    if str(API_DIR) not in sys.path:
+        sys.path.insert(0, str(API_DIR))
 
-except Exception as err:
-    import traceback
-    err_tb = traceback.format_exc()
-    from starlette.applications import Starlette
-    from starlette.responses import PlainTextResponse
-    from starlette.routing import Route
+    # Safe /tmp SQLite initialization
+    tmp_dir = Path("/tmp")
+    tmp_db = tmp_dir / "pragyan.db"
+    tmp_uploads = tmp_dir / "uploads" / "certificates"
+    try:
+        tmp_uploads.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
 
-    async def fallback_route(request):
-        return PlainTextResponse(f"BACKEND_IMPORT_ERROR:\n{err_tb}", status_code=500)
+    if not tmp_db.exists():
+        for candidate in [
+            API_DIR / "pragyan.db",
+            API_DIR.parent / "backend" / "pragyan.db",
+            API_DIR.parent / "pragyan.db",
+        ]:
+            if candidate.exists():
+                try:
+                    shutil.copy2(str(candidate), str(tmp_db))
+                    db_status["copied_from"] = str(candidate)
+                    break
+                except Exception as e:
+                    db_status["copy_error"] = str(e)
 
-    app = Starlette(routes=[Route("/{path:path}", fallback_route, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])])
+    db_status["tmp_db_exists"] = tmp_db.exists()
+    db_status["tmp_db_size"] = tmp_db.stat().st_size if tmp_db.exists() else 0
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_db}"
+    os.environ["UPLOAD_DIR"] = str(tmp_dir / "uploads")
+    os.environ["CERTIFICATES_DIR"] = str(tmp_uploads)
+
+    # Import the main backend app
+    from app.main import app as backend_app
+
+    # Mount all backend routes into this app
+    for route in backend_app.routes:
+        app.routes.append(route)
+
+except Exception as e:
+    initialization_error = traceback.format_exc()
+
+
+@app.get("/api/test")
+@app.get("/test")
+def test_endpoint():
+    return {
+        "status": "online",
+        "message": "Scrappy Python Serverless Engine on Vercel is active",
+        "initialization_error": bool(initialization_error),
+        "db": db_status
+    }
+
+
+@app.get("/api/error")
+@app.get("/error")
+def error_endpoint():
+    if initialization_error:
+        return PlainTextResponse(initialization_error, status_code=500)
+    return PlainTextResponse("No initialization error recorded! Backend imported cleanly.", status_code=200)
