@@ -89,8 +89,22 @@ app.include_router(subscriptions.router)
 app.include_router(quality.router)
 app.include_router(admin.router)
 
+# Also mount under /api prefix for transparent reverse-proxy / serverless routing
+app.include_router(auth.router, prefix="/api")
+app.include_router(companies.router, prefix="/api")
+app.include_router(materials.router, prefix="/api")
+app.include_router(marketplace.router, prefix="/api")
+app.include_router(inventory.router, prefix="/api")
+app.include_router(trades.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
+app.include_router(subscriptions.router, prefix="/api")
+app.include_router(quality.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
+
 
 @app.get("/", tags=["Health"])
+@app.get("/api", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 def health_check():
     """Root health-check endpoint."""
     return {"status": "ok", "service": "Scrappy Backend", "version": "1.0.0"}
